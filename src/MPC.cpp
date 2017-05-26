@@ -8,8 +8,8 @@ using CppAD::AD;
 // TODO: Set the timestep length and duration
 //size_t N = 25;
 //double dt = 0.05;
-size_t N = 50;
-double dt = 0.01;
+size_t N = 8;
+double dt = 0.1;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -25,7 +25,7 @@ const double Lf = 2.67;
 
 double ref_cte = 0;
 double ref_epsi = 0;
-double ref_v = 28;
+double ref_v = 33;
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -56,6 +56,13 @@ class FG_eval {
     // The cost is stored is the first element of `fg`.
     // Any additions to the cost should be added to `fg[0]`.
     fg[0] = 0;
+    double tune_cte = 200;
+    double tune_epsi = 200;
+    double tune_verr = 1;
+    double tune_delta = 30;
+    double tune_a = 5;
+    double tune_dseq = 10;
+    double tune_aseq = 5;
 
     // Reference State Cost
     // TODO: Define the cost related the reference state and
@@ -65,15 +72,15 @@ class FG_eval {
     for (int i = 0; i < N; i++) {
       // adding the cte error
       // note that here ref_cte is 0 which was the case in lecture notes
-      fg[0] += CppAD::pow(vars[cte_start + i] - ref_cte, 2);
+      fg[0] += tune_cte*CppAD::pow(vars[cte_start + i] - ref_cte, 2);
       // adding the epsi error
       // note that here epsi reference is 0 which was the case in lecture notes
-      fg[0] += CppAD::pow(vars[epsi_start + i] - ref_epsi, 2);
+      fg[0] += tune_epsi*CppAD::pow(vars[epsi_start + i] - ref_epsi, 2);
       // adding the velocity error
       // note that to prevent the vehicle from stopping
       // the reference error is set to a finite value such as 35mph in the lecture notes
       // here it is set to 40mph
-      fg[0] += CppAD::pow(vars[v_start + i] - ref_v, 2);
+      fg[0] += tune_verr*CppAD::pow(vars[v_start + i] - ref_v, 2);
     }
 
     // Minimize the use of actuators
@@ -84,8 +91,8 @@ class FG_eval {
     // also penalizing accelleration otherwise it's too much accelerating and braking
     //25 and 10 at 25 mph worked
     for (int i = 0; i < N - 1; i++) {
-      fg[0] += 25*CppAD::pow(vars[delta_start + i], 2);
-      fg[0] += 10*CppAD::pow(vars[a_start + i], 2);
+      fg[0] += tune_delta*CppAD::pow(vars[delta_start + i], 2);
+      fg[0] += tune_a*CppAD::pow(vars[a_start + i], 2);
     }
 
     // Minimize the value gap between sequential actuations.
@@ -101,11 +108,11 @@ class FG_eval {
     // trying 150 for 30 mph
     // trying 150 for 35 mph
     // keeping this value at 1 to help with sharp turns
-    double tuning_value = 1;
+
     // this will keep the sequential steering values closer together
     for (int i = 0; i < N - 2; i++) {
-      fg[0] += tuning_value*CppAD::pow(vars[delta_start + i + 1] - vars[delta_start + i], 2);
-      fg[0] += CppAD::pow(vars[a_start + i + 1] - vars[a_start + i], 2);
+      fg[0] += tune_dseq*CppAD::pow(vars[delta_start + i + 1] - vars[delta_start + i], 2);
+      fg[0] += tune_aseq*CppAD::pow(vars[a_start + i + 1] - vars[a_start + i], 2);
     }
 
     //
@@ -217,8 +224,10 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // degrees (values in radians).
   // NOTE: Feel free to change this to something else.
   for (int i = delta_start; i < a_start; i++) {
-    vars_lowerbound[i] = -0.6;
-    vars_upperbound[i] = 0.6;
+    //vars_lowerbound[i] = -0.436332;
+    //vars_upperbound[i] = 0.436332;
+    vars_lowerbound[i] = -1.0;
+    vars_upperbound[i] = 1.0;
   }
 
   // Acceleration/decceleration upper and lower limits.
