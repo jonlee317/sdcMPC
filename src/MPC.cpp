@@ -8,8 +8,8 @@ using CppAD::AD;
 // TODO: Set the timestep length and duration
 //size_t N = 25;
 //double dt = 0.05;
-size_t N = 8;
-double dt = 0.1;
+size_t N = 10;
+double dt = 0.15;
 
 // This value assumes the model presented in the classroom is used.
 //
@@ -25,7 +25,7 @@ const double Lf = 2.67;
 
 double ref_cte = 0;
 double ref_epsi = 0;
-double ref_v = 33;
+double ref_v = 40;
 
 // The solver takes all the state variables and actuator
 // variables in a singular vector. Thus, we should to establish
@@ -56,13 +56,13 @@ class FG_eval {
     // The cost is stored is the first element of `fg`.
     // Any additions to the cost should be added to `fg[0]`.
     fg[0] = 0;
-    double tune_cte = 200;
-    double tune_epsi = 200;
+    double tune_cte =  2000;
+    double tune_epsi = 5000;
     double tune_verr = 1;
-    double tune_delta = 30;
-    double tune_a = 5;
-    double tune_dseq = 10;
-    double tune_aseq = 5;
+    double tune_delta = 1000;
+    double tune_a = 25;
+    double tune_dseq = 500;
+    double tune_aseq = 25;
 
     // Reference State Cost
     // TODO: Define the cost related the reference state and
@@ -154,8 +154,10 @@ class FG_eval {
       AD<double> delta0 = vars[delta_start + i];
       AD<double> a0 = vars[a_start + i];
 
-      AD<double> f0 = coeffs[0] + coeffs[1] * x0;
-      AD<double> psides0 = CppAD::atan(coeffs[1]);
+      // 3rd degree polonomial f(x)
+      AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2]*x0*x0 + coeffs[3]*x0*x0*x0;
+      // tangential angle is calculated as arctan(f'(x)) above
+      AD<double> psides0 = CppAD::atan(coeffs[1]+2*coeffs[2]*x0+3*coeffs[3]*x0*x0);
 
       fg[2 + x_start + i] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
       fg[2 + y_start + i] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
@@ -177,8 +179,6 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   bool ok = true;
   size_t i;
   typedef CPPAD_TESTVECTOR(double) Dvector;
-
-  std::cout << "hello i'm in solve";
 
   // TODO: Set the number of model variables (includes both states and inputs).
   // For example: If the state is a 4 element vector, the actuators is a 2
@@ -224,10 +224,8 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // degrees (values in radians).
   // NOTE: Feel free to change this to something else.
   for (int i = delta_start; i < a_start; i++) {
-    //vars_lowerbound[i] = -0.436332;
-    //vars_upperbound[i] = 0.436332;
-    vars_lowerbound[i] = -1.0;
-    vars_upperbound[i] = 1.0;
+    vars_lowerbound[i] = -0.436332;
+    vars_upperbound[i] = 0.436332;
   }
 
   // Acceleration/decceleration upper and lower limits.

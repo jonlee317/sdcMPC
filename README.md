@@ -38,13 +38,16 @@ epsi1 = ((psi0 - psides0) + v0 * delta0 / Lf * dt)
 
 ### Timestep Length and Frequency
 
-There was some care taken to choosing these values.  As too many small timesteps may make the calculation too slow and we wouldn't meet the latency requirement.  However, if the time step is too large we won't be able to capture a turn properly.
+There was some care taken to choosing these values.  When the timestep was too small the car was unstable.  I actually had started with timestep of 0.1 and with some trial and error eventually increased it to 0.15 in order to keep the car stable.  A timestep of 0.2 wasn't fine enough for the turns.  And the timestep of 0.1 was unstable.
 
-Therefore, I prioritized choosing the smallest possible time step which covers the latency of 100ms.  Therefore dt was chosen to be at least 0.1:
-double dt = 0.1;
-size_t N = 8;
+Therefore, after choosing the smallest possible time step which covers the latency of 100ms:
 
-The size N was initially set to 20 but it was decreased by trial and error to 10 and then finally to 8 to increase stability.
+```
+double dt = 0.15;
+size_t N = 10;
+```
+
+The size N was initially set to 20 but it was decreased by trial and error to 10.
 
 ### Polynomial Fitting and MPC Preprocessing
 
@@ -77,21 +80,75 @@ Also note that these coefficients are used to calculate the cte and epsi.
 
 ### MPC with latency
 
-In the stage of MPC implementation, first, it is obvious to seek to minimize cte and epsi to zero.  There was some tuning required to strengthen these parameters.  But the speed cannot be minimized to zero since the car may come to a complete stop and be stuck in that state.  Therefore the cost for a reference speed must be set to a value which was 33 in this case.
+A new feature has been added in an attempt to take latency into account correctly.  The idea here is that I have already have the core MPC implemented correctly.  I just need to add one small thing which takes latency into account.  And since the MPC which I have created assumes there is no latency, meaning the initial state is at time=0.  So, what if I could just change that initial state to time=0.1?
 
-Then the cost of using actuators (steering and acceleration) were added and tweaked.  The cost of steering was increased to prevent random erratic driving such as random oscillations.  Also the cost of acceleration was increased to prevent constant accelerating and braking of the car.
+Therefore, I have used the global kinematics equations to calculate what would be the future state (at time=0.1) and errors with the following code:
 
-Then the final cost added was to nerf the sequential steering and acceleration.  These parameters were also slightly tuned.
+```
+double dt = 0.1;
 
-Next, the model constraints was set up based on the vehicle model equations stated in the model section.
+// Global Kinematics equations
+double px_future = px + v*cos(psi)*dt;
+double py_future = py + v*sin(psi)*dt;
+double psi_future = psi - v*(delta/Lf)*dt;   // Note that there is a negative sign because delta is negative
+double v_future = v + a*dt;
 
-Moving on to the solve function.  Basically, just need to set boundaries for the state variables, steering and acceleration.
+// Calculating the future cte and episi based on the new future positions above
+double cte_future = polyeval(coeffs, px_future) - py_future;
+double epsi_future = -atan(coeffs[1]);
+```
+
+Next, I am back to turning parameters.  It is still is obvious to seek to minimize cte and epsi to zero.  There was some tuning required to strengthen these parameters.  
+
+```
+double tune_cte =  2000;
+double tune_epsi = 5000;
+```
+
+Note that the speed cannot be minimized to zero since the car may come to a complete stop and be stuck in that state.  Therefore a reference speed must be set.  It is set to 40 in this case.  Anything higher runs the risk of touching the red and white bumps!  
+
+Then the cost of using actuators (steering and acceleration) were added and tweaked.  
+
+```
+double tune_delta = 1000;
+double tune_a = 25;
+```
+
+The cost of steering was increased to minimize random erratic driving such as random oscillations.  Also the cost of acceleration was increased to minimize constant accelerating and braking of the car.
+
+Then the final cost added was to minimize the sequential steering and acceleration.  
+
+```
+double tune_dseq = 500;
+double tune_aseq = 25;
+```
+
+Next, the model constraints was set up based on the vehicle model equations stated in the model section of the MPC udacity lecture notes.
+
+The solve function was primarily borrowed from the Udacity MPC mind the line code and modified.  Basically, this section was used set boundaries for the state variables, steering and acceleration.
 
 Finally, the the ipopt solver is called and the steering value and acceleration is calculated to steer and accelerate the car
 
-This MPC should have no problems with latency as the car was able to drive around the track without going off the road.  The car is actually able to make it around the track even up to 40mph but the wheels would be entering the red and white areas.  Therefore the speed was lowered to about 31 mph to prevent the car from going into the red and white areas on the sharp turns.  This would also make the CHP (California Highway Patrol) more happy.
+This MPC should have no problems with latency as the car was able to drive around the track without going off the road.  The car is actually able to make it around the track even up to 40mph.  I'm sure that this would also make the CHP (California Highway Patrol) happy that we stay within the speed limits.
 
-The issue of latency was dealt with by the way of implementing this MPC in such a way that the timestep was at least 0.1 seconds.  This is because the MPC is able to take a trajectory (which would ideally be gathered from map and localization information) to predict where the vehicle will go in the next few steps.  However, we are interested only in the first step after the initial step. Therefore, it was desired to have the actuation variables are calculated for the future step of 100 ms which accounts for the latency!
+The issue of latency was dealt with by the way of implementing this MPC in such a way that the timestep was at least 0.1 seconds (set to 0.15) and feeding in the future state into the solver!  This was definitely a big improvement, the car is able to drive around the road at a higher speed than the initial release.
+
+#### New improvements 2017-06-02
+In addition to fixing latency there are some other improvements to this release:
+
+Corrected steering angle as follows:
+```
+steer_value = -1*(vars[6]/deg2rad(25));
+```
+
+Correctly calculate the 3rd order polynomial:
+```
+// 3rd degree polonomial f(x)
+AD<double> f0 = coeffs[0] + coeffs[1] * x0 + coeffs[2]*x0*x0 + coeffs[3]*x0*x0*x0;
+// tangential angle is calculated as arctan(f'(x)) above
+AD<double> psides0 = CppAD::atan(coeffs[1]+2*coeffs[2]*x0+3*coeffs[3]*x0*x0);
+```
+
 
 ## Future work
 It is concluded that this project is a success and that the car is able to drive around the track as specified.  Some future challenges would be to increase the speed of the car and keep it on the track using MPC.
